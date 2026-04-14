@@ -1,0 +1,15 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+     {
+      "label": "build",
+      "type": "shell",
+      "command": "cmake -S . -B build -G Ninja -DCMAKE_TOOLCHAIN_FILE=\"$HOME/vcpkg/scripts/buildsystems/vcpkg.cmake\" && cmake --build build",
+      "group": {
+        "kind": "build",
+        "isDefault": true
+      },
+      "problemMatcher": ["$gcc"]
+    }
+  ]
+}

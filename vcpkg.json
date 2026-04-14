@@ -1,0 +1,10 @@
+{
+  "name": "libcurl-vba-bridge",
+  "version-string": "0.1.0",
+  "dependencies": [
+    {
+        "name": "curl",
+        "features": ["websockets", "ssl"]
+    }
+  ]
+}
