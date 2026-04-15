@@ -6,8 +6,8 @@ project(libcurl_vba_bridge C)
 # ----------------------------
 set(WSC_VERSION_MAJOR 1)
 set(WSC_VERSION_MINOR 0)
-set(WSC_VERSION_PATCH 0)
-set(WSC_VERSION_BUILD 1)
+set(WSC_VERSION_PATCH 1)
+set(WSC_VERSION_BUILD 0)
 
 set(WSC_BRIDGE_API_VERSION 1)
 
@@ -32,6 +32,7 @@ file(MAKE_DIRECTORY "${WSC_OUT_VBA_DIR}")
 # ----------------------------
 # Dependencies
 # ----------------------------
+#set(CURL_USE_STATIC_LIBS ON)
 find_package(CURL REQUIRED)
 
 # ----------------------------
@@ -48,6 +49,7 @@ target_include_directories(libcurl_vba_bridge PRIVATE
 target_link_libraries(libcurl_vba_bridge PRIVATE
     ${CURL_LIBRARIES}
 )
+#target_link_libraries(libcurl_vba_bridge PRIVATE CURL::libcurl)
 
 target_compile_definitions(libcurl_vba_bridge PRIVATE
     WSC_BRIDGE_API_VERSION=${WSC_BRIDGE_API_VERSION}

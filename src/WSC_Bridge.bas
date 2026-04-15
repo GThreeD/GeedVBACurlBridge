@@ -17,7 +17,13 @@ Private Const WSC_GOT_NOTHING As Long = 52
 Private Const WSC_ERRBUF_LEN As Long = 1024
 Private Const WSC_RECVBUF_LEN As Long = 65536
 
+Private Const RTLD_NOW As Long = &H2
+Private Const RTLD_GLOBAL As Long = &H8
+
 Private mGlobalInitialized As Boolean
+
+Private Declare PtrSafe Function dlopen Lib "libc.dylib" (ByVal path As String, ByVal mode As Long) As LongPtr
+Private Declare PtrSafe Function dlerror Lib "libc.dylib" () As String
 
 Private Declare PtrSafe Function wsc_bridge_api_version_native Lib "libcurl_vba_bridge.dylib" Alias "wsc_bridge_api_version" () As Long
 Private Declare PtrSafe Function wsc_bridge_name_native Lib "libcurl_vba_bridge.dylib" Alias "wsc_bridge_name" () As LongPtr
@@ -61,11 +67,37 @@ Private Declare PtrSafe Function memcpy Lib "/usr/lib/libSystem.B.dylib" ( _
     ByVal source As LongPtr, _
     ByVal byteCount As LongPtr) As LongPtr
 
+Private Sub EnsureLibraryLoaded()
+    Static isLoaded As Boolean
+    Static libHandle As LongPtr
+    
+    If isLoaded Then Exit Sub
+
+    Dim libPath As String
+    libpath = Environ("HOME") & "/curl/libcurl_vba_bridge.dylib"
+
+    If Dir(libPath) = "" Then
+        MsgBox "Bibliothek nicht gefunden: " & libpath, vbCritical
+        Exit Sub
+    End If
+
+    libHandle = dlopen(libPath, RTLD_NOW Or RTLD_GLOBAL)
+
+    If libHandle = 0 Then
+        MsgBox "dlopen fehlgeschlagen: " & dlerror(), vbCritical
+        Exit Sub
+    End If
+
+    isLoaded = true
+End Sub
+
 Public Function WSCB_BridgeApiVersion() As Long
+    EnsureLibraryLoaded
     WSCB_BridgeApiVersion = wsc_bridge_api_version_native()
 End Function
 
 Public Function WSCB_BridgeName() As String
+    EnsureLibraryLoaded
     Dim p As LongPtr
     p = wsc_bridge_name_native()
     If p <> 0 Then
@@ -74,6 +106,7 @@ Public Function WSCB_BridgeName() As String
 End Function
 
 Public Function WSCB_LibcurlVersion() As String
+    EnsureLibraryLoaded
     Dim p As LongPtr
     p = wsc_libcurl_version_native()
     If p <> 0 Then
@@ -82,6 +115,7 @@ Public Function WSCB_LibcurlVersion() As String
 End Function
 
 Public Function WSCB_EnsureCompatibleBridge(ByRef errorText As String) As Boolean
+    EnsureLibraryLoaded
     Dim apiVersion As Long
 
     apiVersion = WSCB_BridgeApiVersion()
@@ -94,6 +128,7 @@ Public Function WSCB_EnsureCompatibleBridge(ByRef errorText As String) As Boolea
 End Function
 
 Public Function WSCB_EnsureGlobalInit(ByRef errorText As String) As Boolean
+    EnsureLibraryLoaded
     Dim rc As Long
 
     If mGlobalInitialized Then
@@ -112,6 +147,7 @@ Public Function WSCB_EnsureGlobalInit(ByRef errorText As String) As Boolean
 End Function
 
 Public Sub WSCB_GlobalShutdown()
+    EnsureLibraryLoaded
     If mGlobalInitialized Then
         On Error Resume Next
         wsc_global_cleanup_native
@@ -121,6 +157,7 @@ Public Sub WSCB_GlobalShutdown()
 End Sub
 
 Public Function WSCB_Open(ByVal wsUrl As String, ByVal timeoutMs As Long, ByVal verifyPeer As Boolean, ByVal verifyHost As Boolean, ByRef outHandle As LongPtr, ByRef errorText As String) As Boolean
+    EnsureLibraryLoaded
     Dim rc As Long
     Dim errBuf As String
     Dim compatible As Boolean
@@ -150,6 +187,7 @@ Public Function WSCB_Open(ByVal wsUrl As String, ByVal timeoutMs As Long, ByVal 
 End Function
 
 Public Function WSCB_SendText(ByVal handle As LongPtr, ByVal textValue As String, ByRef errorText As String) As Boolean
+    EnsureLibraryLoaded
     Dim rc As Long
     Dim errBuf As String
     Dim sentBytes As LongPtr
@@ -176,6 +214,7 @@ Public Function WSCB_SendText(ByVal handle As LongPtr, ByVal textValue As String
 End Function
 
 Public Function WSCB_TryReceiveText(ByVal handle As LongPtr, ByVal timeoutMs As Long, ByRef didReceive As Boolean, ByRef textValue As String, ByRef peerClosed As Boolean, ByRef errorText As String) As Boolean
+    EnsureLibraryLoaded
     Dim startedAt As Double
     Dim rc As Long
     Dim recvCount As LongPtr
@@ -233,6 +272,7 @@ Public Function WSCB_TryReceiveText(ByVal handle As LongPtr, ByVal timeoutMs As 
 End Function
 
 Public Sub WSCB_Close(ByVal handle As LongPtr)
+    EnsureLibraryLoaded
     If handle <> 0 Then
         On Error Resume Next
         wsc_close_native handle
@@ -241,6 +281,7 @@ Public Sub WSCB_Close(ByVal handle As LongPtr)
 End Sub
 
 Private Function WSCB_ErrorText(ByVal rc As Long) As String
+    EnsureLibraryLoaded
     Dim p As LongPtr
     p = wsc_last_error_text_native(rc)
 
@@ -252,6 +293,7 @@ Private Function WSCB_ErrorText(ByVal rc As Long) As String
 End Function
 
 Private Function WSCB_CStringToString(ByVal pText As LongPtr) As String
+    EnsureLibraryLoaded
     Dim b(0 To 0) As Byte
     Dim i As Long
     Dim resultText As String
@@ -268,6 +310,7 @@ Private Function WSCB_CStringToString(ByVal pText As LongPtr) As String
 End Function
 
 Private Function WSCB_TrimNulls(ByVal textValue As String) As String
+    EnsureLibraryLoaded
     Dim p As Long
     p = InStr(1, textValue, vbNullChar)
 
@@ -279,6 +322,7 @@ Private Function WSCB_TrimNulls(ByVal textValue As String) As String
 End Function
 
 Private Function WSCB_ElapsedMs(ByVal startedAt As Double) As Long
+    EnsureLibraryLoaded
     Dim nowValue As Double
     nowValue = Timer
 
