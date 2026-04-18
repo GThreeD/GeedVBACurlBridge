@@ -203,7 +203,7 @@ Public Function WSCB_SendText(ByVal handle As LongPtr, ByVal textValue As String
         Exit Function
     End If
 
-    utf8 = WSCB_StringToUtf8Bytes(textValue)
+    utf8 = WSCB_StringToWireBytes(textValue)
     errBuf = String$(WSC_ERRBUF_LEN, vbNullChar)
 
     If (Not Not utf8) <> 0 Then
@@ -256,13 +256,8 @@ Public Function WSCB_TryReceiveText(ByVal handle As LongPtr, ByVal timeoutMs As 
 
         If rc = WSC_OK Then
             If recvCount > 0 Then
-                Dim payload() As Byte
-                ReDim payload(0 To CLng(recvCount) - 1)
-
-                memcpy VarPtr(payload(0)), VarPtr(outBuf(0)), recvCount
-
                 didReceive = True
-                textValue = WSCB_Utf8BytesToString(payload)
+                textValue = WSCB_WireBytesToString(outBuf, CLng(recvCount))
                 WSCB_TryReceiveText = True
                 Exit Function
             End If
@@ -358,20 +353,45 @@ Private Function WSCB_ElapsedMs(ByVal startedAt As Double) As Long
     End If
 End Function
 
-Private Function WSCB_StringToUtf8Bytes(ByVal textValue As String) As Byte()
+Private Function WSCB_StringToWireBytes(ByVal textValue As String) As Byte()
+    Dim result() As Byte
+    Dim i As Long
+    Dim ch As Long
+
     If Len(textValue) = 0 Then
-        ReDim WSCB_StringToUtf8Bytes(0 To -1)
+        ReDim result(0 To -1)
+        WSCB_StringToWireBytes = result
         Exit Function
     End If
 
-    WSCB_StringToUtf8Bytes = StrConv(textValue, vbFromUnicode)
+    ReDim result(0 To Len(textValue) - 1)
+
+    For i = 1 To Len(textValue)
+        ch = AscW(Mid$(textValue, i, 1))
+        If ch < 0 Or ch > 127 Then
+            Err.Raise vbObjectError + 7301, "WSCB_StringToWireBytes", _
+                "Non-ASCII character in wire text at position " & CStr(i) & "."
+        End If
+        result(i - 1) = ch
+    Next i
+
+    WSCB_StringToWireBytes = result
 End Function
 
-Private Function WSCB_Utf8BytesToString(ByRef bytes() As Byte) As String
-    If (Not Not bytes) = 0 Then
-        WSCB_Utf8BytesToString = vbNullString
+Private Function WSCB_WireBytesToString(ByRef bytes() As Byte, ByVal byteCount As Long) As String
+    Dim result As String
+    Dim i As Long
+
+    If byteCount <= 0 Then
+        WSCB_WireBytesToString = vbNullString
         Exit Function
     End If
 
-    WSCB_Utf8BytesToString = StrConv(bytes, vbUnicode)
+    result = String$(byteCount, vbNullChar)
+
+    For i = 1 To byteCount
+        Mid$(result, i, 1) = Chr$(bytes(LBound(bytes) + i - 1))
+    Next i
+
+    WSCB_WireBytesToString = result
 End Function
