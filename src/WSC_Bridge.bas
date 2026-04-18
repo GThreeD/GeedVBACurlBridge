@@ -44,17 +44,18 @@ Private Declare PtrSafe Function wsc_open_native Lib "libcurl_vba_bridge.dylib" 
 Private Declare PtrSafe Sub wsc_close_native Lib "libcurl_vba_bridge.dylib" Alias "wsc_close" ( _
     ByVal h As LongPtr)
 
-Private Declare PtrSafe Function wsc_send_text_native Lib "libcurl_vba_bridge.dylib" Alias "wsc_send_text" ( _
+Private Declare PtrSafe Function wsc_send_text_native Lib "libcurl_vba_bridge.dylib" Alias "wsc_send_text_utf8" ( _
     ByVal h As LongPtr, _
-    ByVal textValue As String, _
+    ByVal bufPtr As LongPtr, _
+    ByVal bufLen As LongPtr, _
     ByRef sentBytes As LongPtr, _
     ByVal errBuf As String, _
     ByVal errBufLen As Long) As Long
 
-Private Declare PtrSafe Function wsc_recv_text_native Lib "libcurl_vba_bridge.dylib" Alias "wsc_recv_text" ( _
+Private Declare PtrSafe Function wsc_recv_text_native Lib "libcurl_vba_bridge.dylib" Alias "wsc_recv_text_utf8" ( _
     ByVal h As LongPtr, _
-    ByVal outBuf As String, _
-    ByVal outBufLen As Long, _
+    ByVal outBufPtr As LongPtr, _
+    ByVal outBufLen As LongPtr, _
     ByRef receivedBytes As LongPtr, _
     ByVal errBuf As String, _
     ByVal errBufLen As Long) As Long
@@ -187,11 +188,14 @@ Public Function WSCB_Open(ByVal wsUrl As String, ByVal timeoutMs As Long, ByVal 
 End Function
 
 Public Function WSCB_SendText(ByVal handle As LongPtr, ByVal textValue As String, ByRef errorText As String) As Boolean
-    EnsureLibraryLoaded
     Dim rc As Long
     Dim errBuf As String
     Dim sentBytes As LongPtr
+    Dim utf8() As Byte
+    Dim bufPtr As LongPtr
+    Dim bufLen As LongPtr
 
+    EnsureLibraryLoaded
     errorText = vbNullString
 
     If handle = 0 Then
@@ -199,9 +203,18 @@ Public Function WSCB_SendText(ByVal handle As LongPtr, ByVal textValue As String
         Exit Function
     End If
 
+    utf8 = WSCB_StringToUtf8Bytes(textValue)
     errBuf = String$(WSC_ERRBUF_LEN, vbNullChar)
 
-    rc = wsc_send_text_native(handle, textValue, sentBytes, errBuf, Len(errBuf))
+    If (Not Not utf8) <> 0 Then
+        bufPtr = VarPtr(utf8(LBound(utf8)))
+        bufLen = UBound(utf8) - LBound(utf8) + 1
+    Else
+        bufPtr = 0
+        bufLen = 0
+    End If
+
+    rc = wsc_send_text_native(handle, bufPtr, bufLen, sentBytes, errBuf, Len(errBuf))
     If rc <> WSC_OK Then
         errorText = WSCB_TrimNulls(errBuf)
         If Len(errorText) = 0 Then
@@ -214,12 +227,13 @@ Public Function WSCB_SendText(ByVal handle As LongPtr, ByVal textValue As String
 End Function
 
 Public Function WSCB_TryReceiveText(ByVal handle As LongPtr, ByVal timeoutMs As Long, ByRef didReceive As Boolean, ByRef textValue As String, ByRef peerClosed As Boolean, ByRef errorText As String) As Boolean
-    EnsureLibraryLoaded
     Dim startedAt As Double
     Dim rc As Long
     Dim recvCount As LongPtr
     Dim errBuf As String
-    Dim outBuf As String
+    Dim outBuf() As Byte
+
+    EnsureLibraryLoaded
 
     didReceive = False
     peerClosed = False
@@ -232,18 +246,23 @@ Public Function WSCB_TryReceiveText(ByVal handle As LongPtr, ByVal timeoutMs As 
     End If
 
     startedAt = Timer
-    outBuf = String$(WSC_RECVBUF_LEN, vbNullChar)
+    ReDim outBuf(0 To WSC_RECVBUF_LEN - 1)
 
     Do
         errBuf = String$(WSC_ERRBUF_LEN, vbNullChar)
         recvCount = 0
 
-        rc = wsc_recv_text_native(handle, outBuf, Len(outBuf), recvCount, errBuf, Len(errBuf))
+        rc = wsc_recv_text_native(handle, VarPtr(outBuf(0)), WSC_RECVBUF_LEN, recvCount, errBuf, Len(errBuf))
 
         If rc = WSC_OK Then
             If recvCount > 0 Then
+                Dim payload() As Byte
+                ReDim payload(0 To CLng(recvCount) - 1)
+
+                memcpy VarPtr(payload(0)), VarPtr(outBuf(0)), recvCount
+
                 didReceive = True
-                textValue = Left$(outBuf, CLng(recvCount))
+                textValue = WSCB_Utf8BytesToString(payload)
                 WSCB_TryReceiveText = True
                 Exit Function
             End If
@@ -293,20 +312,26 @@ Private Function WSCB_ErrorText(ByVal rc As Long) As String
 End Function
 
 Private Function WSCB_CStringToString(ByVal pText As LongPtr) As String
-    EnsureLibraryLoaded
-    Dim b(0 To 0) As Byte
+    Dim bytes() As Byte
     Dim i As Long
-    Dim resultText As String
+    Dim oneByte(0 To 0) As Byte
 
     If pText = 0 Then Exit Function
 
+    ReDim bytes(0 To 4095)
+
     For i = 0 To 4095
-        memcpy VarPtr(b(0)), pText + i, 1
-        If b(0) = 0 Then Exit For
-        resultText = resultText & Chr$(b(0))
+        memcpy VarPtr(oneByte(0)), pText + i, 1
+        If oneByte(0) = 0 Then Exit For
+        bytes(i) = oneByte(0)
     Next i
 
-    WSCB_CStringToString = resultText
+    If i = 0 Then
+        WSCB_CStringToString = vbNullString
+    Else
+        ReDim Preserve bytes(0 To i - 1)
+        WSCB_CStringToString = WSCB_Utf8BytesToString(bytes)
+    End If
 End Function
 
 Private Function WSCB_TrimNulls(ByVal textValue As String) As String
@@ -331,4 +356,22 @@ Private Function WSCB_ElapsedMs(ByVal startedAt As Double) As Long
     Else
         WSCB_ElapsedMs = CLng(((86400# - startedAt) + nowValue) * 1000#)
     End If
+End Function
+
+Private Function WSCB_StringToUtf8Bytes(ByVal textValue As String) As Byte()
+    If Len(textValue) = 0 Then
+        ReDim WSCB_StringToUtf8Bytes(0 To -1)
+        Exit Function
+    End If
+
+    WSCB_StringToUtf8Bytes = StrConv(textValue, vbFromUnicode)
+End Function
+
+Private Function WSCB_Utf8BytesToString(ByRef bytes() As Byte) As String
+    If (Not Not bytes) = 0 Then
+        WSCB_Utf8BytesToString = vbNullString
+        Exit Function
+    End If
+
+    WSCB_Utf8BytesToString = StrConv(bytes, vbUnicode)
 End Function

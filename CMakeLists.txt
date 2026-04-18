@@ -6,7 +6,7 @@ project(libcurl_vba_bridge C)
 # ----------------------------
 set(WSC_VERSION_MAJOR 1)
 set(WSC_VERSION_MINOR 0)
-set(WSC_VERSION_PATCH 1)
+set(WSC_VERSION_PATCH 2)
 set(WSC_VERSION_BUILD 0)
 
 set(WSC_BRIDGE_API_VERSION 1)

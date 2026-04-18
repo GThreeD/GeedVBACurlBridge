@@ -40,12 +40,13 @@ const char *wsc_libcurl_version(void) {
 }
 
 static void wsc_copy_err(char *dst, long dst_len, const char *src) {
+    size_t n;
     if (!dst || dst_len <= 0) return;
     if (!src) {
         dst[0] = 0;
         return;
     }
-    size_t n = (size_t)(dst_len - 1);
+    n = (size_t)(dst_len - 1);
     strncpy(dst, src, n);
     dst[n] = 0;
 }
@@ -106,14 +107,14 @@ void wsc_close(void *h) {
     if (h) curl_easy_cleanup((CURL *)h);
 }
 
-long wsc_send_text(void *h,
-                   const char *text_value,
-                   size_t *sent_bytes,
-                   char *errbuf,
-                   long errbuf_len) {
+long wsc_send_text_utf8(void *h,
+                        const unsigned char *buf,
+                        size_t buf_len,
+                        size_t *sent_bytes,
+                        char *errbuf,
+                        long errbuf_len) {
     CURLcode rc;
     size_t sent = 0;
-    size_t len = 0;
 
     if (sent_bytes) *sent_bytes = 0;
     if (!h) {
@@ -121,11 +122,9 @@ long wsc_send_text(void *h,
         return CURLE_FAILED_INIT;
     }
 
-    if (text_value) len = strlen(text_value);
-
     rc = curl_ws_send((CURL *)h,
-                      text_value,
-                      len,
+                      buf,
+                      buf_len,
                       &sent,
                       0,
                       CURLWS_TEXT);
@@ -141,12 +140,12 @@ long wsc_send_text(void *h,
     return CURLE_OK;
 }
 
-long wsc_recv_text(void *h,
-                   char *out_buf,
-                   size_t out_buf_len,
-                   size_t *received_bytes,
-                   char *errbuf,
-                   long errbuf_len) {
+long wsc_recv_text_utf8(void *h,
+                        unsigned char *out_buf,
+                        size_t out_buf_len,
+                        size_t *received_bytes,
+                        char *errbuf,
+                        long errbuf_len) {
     CURLcode rc;
     size_t received = 0;
     const struct curl_ws_frame *meta = NULL;
@@ -161,10 +160,9 @@ long wsc_recv_text(void *h,
         return CURLE_BAD_FUNCTION_ARGUMENT;
     }
 
-    rc = curl_ws_recv((CURL *)h, out_buf, out_buf_len - 1, &received, &meta);
+    rc = curl_ws_recv((CURL *)h, out_buf, out_buf_len, &received, &meta);
 
     if (received_bytes) *received_bytes = received;
-    out_buf[received < out_buf_len ? received : (out_buf_len - 1)] = 0;
 
     if (rc != CURLE_OK) {
         wsc_copy_err(errbuf, errbuf_len, curl_easy_strerror(rc));
